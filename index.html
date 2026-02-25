@@ -2,21 +2,55 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>My GeoGuessr Clone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My GeoGuessr</title>
+    
     <link href='https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css' rel='stylesheet' />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
     <style>
-        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
-        #mly { flex: 2; background: #222; } /* Top: Street View */
-        #map { flex: 1; height: 300px; }     /* Bottom: Guessing Map */
-        .ui-panel { position: absolute; top: 10px; left: 10px; z-index: 1000; }
-        button { padding: 10px 20px; background: #2ecc71; color: white; border: none; cursor: pointer; font-weight: bold; border-radius: 5px; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Ensure the top section is visible and takes up 70% of the screen */
+        #mly { 
+            flex: 7; 
+            background: #000; 
+            width: 100%;
+            min-height: 300px;
+        }
+
+        /* Ensure the bottom map takes up 30% */
+        #map { 
+            flex: 3; 
+            width: 100%;
+            background: #ddd;
+            border-top: 5px solid #333;
+        }
+
+        .ui { 
+            position: absolute; 
+            top: 15px; 
+            left: 15px; 
+            z-index: 2000; 
+        }
+
+        button { 
+            padding: 15px 25px; 
+            background: #2ecc71; 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            font-weight: bold; 
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body>
 
-    <div class="ui-panel">
-        <button onclick="checkGuess()">SUBMIT GUESS</button>
+    <div class="ui">
+        <button id="submitBtn">SUBMIT GUESS</button>
     </div>
 
     <div id="mly"></div>
@@ -26,32 +60,45 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // 1. Your API Token
+        // Use your token
         const MLY_TOKEN = 'MLY|26310050215287964|040380c26b7962fb3a60d6e62ad5d390';
         let targetLoc = null;
         let guessMarker = null;
+        let map, mly;
 
-        // 2. Setup the Street View
-        const mly = new mapillary.Viewer({
-            accessToken: MLY_TOKEN,
-            container: 'mly',
-            component: { cover: false }
-        });
+        // Wait for the window to finish loading
+        window.onload = function() {
+            
+            // Initialize Leaflet Map
+            map = L.map('map').setView([20, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // 3. Setup the Guessing Map
-        const map = L.map('map').setView([20, 0], 2);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            // Handle Clicks
+            map.on('click', function(e) {
+                if (guessMarker) {
+                    guessMarker.setLatLng(e.latlng);
+                } else {
+                    guessMarker = L.marker(e.latlng).addTo(map);
+                }
+            });
 
-        map.on('click', (e) => {
-            if (guessMarker) map.removeLayer(guessMarker);
-            guessMarker = L.marker(e.latlng).addTo(map);
-        });
+            // Initialize Mapillary
+            mly = new mapillary.Viewer({
+                accessToken: MLY_TOKEN,
+                container: 'mly',
+                component: { cover: false }
+            });
 
-        // 4. Randomizer Logic
+            // Set up Submit Button
+            document.getElementById('submitBtn').onclick = checkGuess;
+
+            loadRandomPlace();
+        };
+
         async function loadRandomPlace() {
-            // Picking a random spot in Europe/USA for better coverage
-            const lat = (Math.random() * 30) + 30; 
-            const lng = (Math.random() * 60) - 20;
+            // Pick a random spot in a high-coverage area (USA/Europe mix)
+            const lat = (Math.random() * 30) + 25; 
+            const lng = (Math.random() * 80) - 40;
 
             const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${lng-1},${lat-1},${lng+1},${lat+1}&is_pano=true&limit=1`;
 
@@ -59,23 +106,33 @@
                 const res = await fetch(url);
                 const json = await res.json();
                 if (json.data && json.data.length > 0) {
-                    targetLoc = { lat: json.data[0].geometry.coordinates[1], lng: json.data[0].geometry.coordinates[0] };
-                    mly.moveTo(json.data[0].id);
+                    const img = json.data[0];
+                    targetLoc = { lat: img.geometry.coordinates[1], lng: img.geometry.coordinates[0] };
+                    mly.moveTo(img.id);
                 } else {
-                    loadRandomPlace(); // Retry if we hit the ocean
+                    loadRandomPlace(); // Try again if no image found
                 }
-            } catch (e) { loadRandomPlace(); }
+            } catch (e) {
+                loadRandomPlace();
+            }
         }
 
-        // 5. Check Score
         function checkGuess() {
-            if (!guessMarker || !targetLoc) return alert("Click the map to guess first!");
-            const dist = map.distance(guessMarker.getLatLng(), [targetLoc.lat, targetLoc.lng]) / 1000;
-            alert(`You were ${dist.toFixed(2)} km away!`);
-            location.reload(); // Restart game
-        }
+            if (!guessMarker) {
+                alert("Please click on the map to place your marker first!");
+                return;
+            }
+            if (!targetLoc) {
+                alert("Still loading the location... please wait a second.");
+                return;
+            }
 
-        loadRandomPlace();
+            const guess = guessMarker.getLatLng();
+            const distance = map.distance(guess, [targetLoc.lat, targetLoc.lng]) / 1000;
+            
+            alert("You were " + distance.toFixed(2) + " km away!");
+            location.reload(); // Refresh for next round
+        }
     </script>
 </body>
 </html>

@@ -2,23 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>GeoGuessr Debug Mode</title>
+    <title>GeoGuessr Fix</title>
     <link href='https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css' rel='stylesheet' />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #111; }
-        #mly { flex: 1; width: 100%; min-height: 400px; background: #222; }
-        #map { height: 300px; width: 100%; border-top: 4px solid #444; }
-        .ui { position: absolute; top: 10px; left: 10px; z-index: 1000; }
-        button { padding: 15px; cursor: pointer; background: #2ecc71; color: white; border: none; border-radius: 5px; font-weight: bold; }
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #000; color: white; font-family: sans-serif; }
+        #mly { flex: 2; width: 100%; background: #111; position: relative; }
+        #map { flex: 1; width: 100%; border-top: 4px solid #333; }
+        #debug { position: absolute; top: 70px; left: 10px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 12px; z-index: 3000; border-radius: 5px; max-width: 300px; }
+        .ui { position: absolute; top: 10px; left: 10px; z-index: 4000; }
+        button { padding: 12px 20px; cursor: pointer; background: #2ecc71; color: white; border: none; border-radius: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <div class="ui">
         <button onclick="checkGuess()">SUBMIT GUESS</button>
-        <div id="status" style="color: white; margin-top: 10px; background: rgba(0,0,0,0.5); padding: 5px;">Status: Initializing...</div>
     </div>
+
+    <div id="debug">Status: Initializing...</div>
 
     <div id="mly"></div>
     <div id="map"></div>
@@ -28,47 +30,64 @@
 
     <script>
         const MLY_TOKEN = 'MLY|26310050215287964|040380c26b7962fb3a60d6e62ad5d390';
-        
-        // Fixed location for testing (Eiffel Tower area)
-        const targetLoc = { lat: 48.8584, lng: 2.2945 };
-        const testImageId = '498763468512731'; 
+        const debug = document.getElementById('debug');
+        let map, mly, guessMarker, targetLoc;
 
-        let map, mly, guessMarker;
+        function log(msg) { debug.innerText = "Status: " + msg; console.log(msg); }
 
         window.onload = function() {
-            document.getElementById('status').innerText = "Status: Loading Map...";
-            
-            // 1. Setup Map
+            log("Loading Leaflet...");
             map = L.map('map').setView([20, 0], 2);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
             map.on('click', (e) => {
                 if (guessMarker) guessMarker.setLatLng(e.latlng);
                 else guessMarker = L.marker(e.latlng).addTo(map);
+                log("Marker placed at: " + e.latlng.lat.toFixed(2));
             });
 
-            // 2. Setup Mapillary
-            try {
-                mly = new mapillary.Viewer({
-                    accessToken: MLY_TOKEN,
-                    container: 'mly',
-                    imageId: testImageId, // Start with a known working image
-                    component: { cover: false }
-                });
-                
-                mly.on('load', () => {
-                    document.getElementById('status').innerText = "Status: Ready!";
-                });
-            } catch (err) {
-                document.getElementById('status').innerText = "Status: Mapillary Failed to Load";
-                console.error(err);
-            }
+            log("Starting Mapillary...");
+            mly = new mapillary.Viewer({
+                accessToken: MLY_TOKEN,
+                container: 'mly',
+                component: { cover: false }
+            });
+
+            findImage();
         };
+
+        async function findImage() {
+            log("Searching for images in London...");
+            // Search coordinates for London
+            const lat = 51.5074;
+            const lng = -0.1278;
+            const bbox = `${lng-0.1},${lat-0.1},${lng+0.1},${lat+0.1}`;
+            
+            const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${bbox}&limit=1`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                if (data.data && data.data.length > 0) {
+                    const img = data.data[0];
+                    targetLoc = { lat: img.geometry.coordinates[1], lng: img.geometry.coordinates[0] };
+                    log("Image found! ID: " + img.id);
+                    mly.moveTo(img.id).catch(e => log("MoveTo Error: " + e.message));
+                } else {
+                    log("Error: No images found in this area.");
+                }
+            } catch (err) {
+                log("API Error: Check your Token or Internet.");
+            }
+        }
 
         function checkGuess() {
             if (!guessMarker) return alert("Click the map first!");
+            if (!targetLoc) return alert("Still loading imagery...");
             const dist = map.distance(guessMarker.getLatLng(), [targetLoc.lat, targetLoc.lng]) / 1000;
-            alert(`You were ${dist.toFixed(2)} km away from Paris!`);
+            alert(`You were ${dist.toFixed(2)} km away!`);
+            location.reload();
         }
     </script>
 </body>

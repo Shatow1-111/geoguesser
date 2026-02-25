@@ -1,0 +1,43 @@
+const MLY_TOKEN = 'MLY|26310050215287964|040380c26b7962fb3a60d6e62ad5d390';
+
+// A few "Safe zones" to pick from so you don't end up in the middle of the ocean
+const regions = [
+    { name: "Europe", minLat: 35, maxLat: 60, minLng: -10, maxLng: 30 },
+    { name: "North America", minLat: 25, maxLat: 50, minLng: -125, maxLng: -70 },
+    { name: "Japan", minLat: 30, maxLat: 45, minLng: 130, maxLng: 145 }
+];
+
+async function getRandomLocation() {
+    // 1. Pick a random region and a random point inside it
+    const region = regions[Math.floor(Math.random() * regions.length)];
+    const lat = Math.random() * (region.maxLat - region.minLat) + region.minLat;
+    const lng = Math.random() * (region.maxLng - region.minLng) + region.minLng;
+
+    // 2. Ask Mapillary for the closest image to that random point
+    // We filter for 'is_pano=true' to get 360 views
+    const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${lng-0.5},${lat-0.5},${lng+0.5},${lat+0.5}&is_pano=true&limit=1`;
+
+    try {
+        const response = await fetch(url);
+        const json = await response.json();
+
+        if (json.data && json.data.length > 0) {
+            const imageId = json.data[0].id;
+            const actualCoords = json.data[0].geometry.coordinates;
+            
+            // 3. Move the viewer to this image
+            mly.moveTo(imageId);
+            
+            // Save actualCoords globally to compare against the user's guess
+            window.targetLoc = { lat: actualCoords[1], lng: actualCoords[0] };
+        } else {
+            // No image found? Try again!
+            getRandomLocation();
+        }
+    } catch (err) {
+        console.error("API Error:", err);
+    }
+}
+
+// Call this when the game starts
+getRandomLocation();

@@ -1,131 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GeoGuessr Clone</title>
-    
     <link href='https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css' rel='stylesheet' />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        
-        /* The Street View Area */
-        #mly { flex: 1; background: #222; position: relative; }
-
-        /* The Guessing Map (Floating in corner) */
-        #map-container { position: absolute; bottom: 20px; right: 20px; width: 300px; height: 200px; z-index: 1000; border: 4px solid white; border-radius: 8px; transition: 0.3s; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        #map-container:hover { width: 450px; height: 350px; }
-        #map { width: 100%; height: 100%; }
-
-        /* UI Elements */
-        #ui { position: absolute; top: 20px; left: 20px; z-index: 1000; display: flex; gap: 10px; }
-        button { padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.2s; }
-        .btn-guess { background: #2ecc71; color: white; }
-        .btn-next { background: #3498db; color: white; display: none; }
-        button:hover { transform: scale(1.05); opacity: 0.9; }
-        
-        #score-card { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; box-shadow: 0 0 50px rgba(0,0,0,0.5); z-index: 2000; display: none; text-align: center; }
+        /* This makes the page look like a game */
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        #mly { flex: 2; background: #333; } 
+        #map { flex: 1; height: 300px; }
+        .ui { position: absolute; top: 10px; left: 10px; z-index: 1000; }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <button class="btn-guess" id="guessBtn" onclick="checkGuess()">SUBMIT GUESS</button>
-        <button class="btn-next" id="nextBtn" onclick="location.reload()">NEXT ROUND</button>
-    </div>
-
-    <div id="score-card">
-        <h2 id="distance-text"></h2>
-        <p id="points-text"></p>
-        <button onclick="document.getElementById('score-card').style.display='none'">Close</button>
+    <div class="ui">
+        <button onclick="checkGuess()">SUBMIT GUESS</button>
     </div>
 
     <div id="mly"></div>
-
-    <div id="map-container">
-        <div id="map"></div>
-    </div>
+    <div id="map"></div>
 
     <script src='https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js'></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // --- CONFIGURATION ---
-        const MLY_TOKEN = 'MLY|26310050215287964|040380c26b7962fb3a60d6e62ad5d390'; // PASTE YOUR TOKEN HERE
-        let targetLoc = null;
-        let guessMarker = null;
-
-        // --- INITIALIZE MAPS ---
+        const MLY_TOKEN = 'MLY|26310050215287964|040380c26b7962fb3a60d6e62ad5d390'; // Your token from the screenshot
+        
+        // Initialize the Leaflet Map
         const map = L.map('map').setView([20, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+        // Initialize the Mapillary Viewer
         const mly = new mapillary.Viewer({
             accessToken: MLY_TOKEN,
             container: 'mly',
-            component: { cover: false }
         });
 
-        // Click to place marker
-        map.on('click', (e) => {
-            if (guessMarker) map.removeLayer(guessMarker);
-            guessMarker = L.marker(e.latlng).addTo(map);
-        });
-
-        // --- RANDOMIZER LOGIC ---
-        async function getRandomLocation() {
-            // A mix of regions with high Mapillary coverage
-            const regions = [
-                { minLat: 35, maxLat: 60, minLng: -10, maxLng: 30 }, // Europe
-                { minLat: 25, maxLat: 50, minLng: -125, maxLng: -70 }, // USA
-                { minLat: -40, maxLat: -10, minLng: 110, maxLng: 150 }, // Australia
-                { minLat: 30, maxLat: 45, minLng: 130, maxLng: 145 }  // Japan
-            ];
-
-            const reg = regions[Math.floor(Math.random() * regions.length)];
-            const lat = Math.random() * (reg.maxLat - reg.minLat) + reg.minLat;
-            const lng = Math.random() * (reg.maxLng - reg.minLng) + reg.minLng;
-
-            const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${lng-1},${lat-1},${lng+1},${lat+1}&is_pano=true&limit=1`;
-
-            try {
-                const res = await fetch(url);
-                const json = await res.json();
-                if (json.data && json.data.length > 0) {
-                    const img = json.data[0];
-                    targetLoc = { lat: img.geometry.coordinates[1], lng: img.geometry.coordinates[0] };
-                    mly.moveTo(img.id);
-                } else {
-                    getRandomLocation(); // Retry if empty area
-                }
-            } catch (e) {
-                console.error("Fetch failed, retrying...");
-                getRandomLocation();
-            }
-        }
-
-        // --- GAME LOGIC ---
-        function checkGuess() {
-            if (!guessMarker || !targetLoc) return alert("Drop a pin on the map first!");
-
-            const guess = guessMarker.getLatLng();
-            const dist = map.distance(guess, [targetLoc.lat, targetLoc.lng]) / 1000; // Kilometers
-            
-            // Basic Score Formula (Max 5000)
-            const score = Math.max(0, Math.round(5000 * Math.exp(-dist / 2000)));
-
-            document.getElementById('distance-text').innerText = `${dist.toFixed(1)} km away`;
-            document.getElementById('points-text').innerText = `You earned ${score} points!`;
-            document.getElementById('score-card').style.display = 'block';
-            
-            // Reveal actual location on map
-            L.circle([targetLoc.lat, targetLoc.lng], {color: 'red', radius: 2000}).addTo(map);
-            document.getElementById('guessBtn').style.display = 'none';
-            document.getElementById('nextBtn').style.display = 'block';
-        }
-
-        getRandomLocation();
+        // Paste the rest of your randomizer logic here...
+        // (The functions you have in your second screenshot)
     </script>
 </body>
 </html>

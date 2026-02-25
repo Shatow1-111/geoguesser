@@ -9,7 +9,7 @@
         body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #000; color: white; font-family: sans-serif; }
         #mly { flex: 2; width: 100%; background: #111; position: relative; }
         #map { flex: 1; width: 100%; border-top: 4px solid #333; }
-        #debug { position: absolute; top: 70px; left: 10px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 12px; z-index: 3000; border-radius: 5px; max-width: 300px; }
+        #debug { position: absolute; top: 70px; left: 10px; background: rgba(0,0,0,0.8); padding: 10px; font-size: 12px; z-index: 3000; border-radius: 5px; }
         .ui { position: absolute; top: 10px; left: 10px; z-index: 4000; }
         button { padding: 12px 20px; cursor: pointer; background: #2ecc71; color: white; border: none; border-radius: 5px; font-weight: bold; }
     </style>
@@ -33,20 +33,18 @@
         const debug = document.getElementById('debug');
         let map, mly, guessMarker, targetLoc;
 
-        function log(msg) { debug.innerText = "Status: " + msg; console.log(msg); }
+        function log(msg) { debug.innerText = "Status: " + msg; }
 
         window.onload = function() {
-            log("Loading Leaflet...");
+            log("Loading Map...");
             map = L.map('map').setView([20, 0], 2);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
             map.on('click', (e) => {
                 if (guessMarker) guessMarker.setLatLng(e.latlng);
                 else guessMarker = L.marker(e.latlng).addTo(map);
-                log("Marker placed at: " + e.latlng.lat.toFixed(2));
             });
 
-            log("Starting Mapillary...");
             mly = new mapillary.Viewer({
                 accessToken: MLY_TOKEN,
                 container: 'mly',
@@ -57,38 +55,26 @@
         };
 
         async function findImage() {
-            log("Searching for images in London...");
-            // Search coordinates for London
-            const lat = 51.5074;
-            const lng = -0.1278;
-            const bbox = `${lng-0.1},${lat-0.1},${lng+0.1},${lat+0.1}`;
+            log("Searching for 360° view...");
             
-            const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${bbox}&limit=1`;
+            // List of high-coverage cities
+            const cities = [
+                { name: "London", lat: 51.5, lng: -0.12 },
+                { name: "New York", lat: 40.7, lng: -74.0 },
+                { name: "Paris", lat: 48.8, lng: 2.3 },
+                { name: "Tokyo", lat: 35.6, lng: 139.6 }
+            ];
+
+            const spot = cities[Math.floor(Math.random() * cities.length)];
+            const bbox = `${spot.lng - 0.5},${spot.lat - 0.5},${spot.lng + 0.5},${spot.lat + 0.5}`;
+            
+            // The API URL
+            const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${bbox}&is_pano=true&limit=5`;
 
             try {
                 const res = await fetch(url);
                 const data = await res.json();
                 
                 if (data.data && data.data.length > 0) {
-                    const img = data.data[0];
-                    targetLoc = { lat: img.geometry.coordinates[1], lng: img.geometry.coordinates[0] };
-                    log("Image found! ID: " + img.id);
-                    mly.moveTo(img.id).catch(e => log("MoveTo Error: " + e.message));
-                } else {
-                    log("Error: No images found in this area.");
-                }
-            } catch (err) {
-                log("API Error: Check your Token or Internet.");
-            }
-        }
-
-        function checkGuess() {
-            if (!guessMarker) return alert("Click the map first!");
-            if (!targetLoc) return alert("Still loading imagery...");
-            const dist = map.distance(guessMarker.getLatLng(), [targetLoc.lat, targetLoc.lng]) / 1000;
-            alert(`You were ${dist.toFixed(2)} km away!`);
-            location.reload();
-        }
-    </script>
-</body>
-</html>
+                    const img = data.data[Math.floor(Math.random() * data.data.length)];
+                    targetLoc = {
